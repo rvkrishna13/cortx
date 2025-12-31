@@ -1,236 +1,240 @@
-# Financial MCP Server - Architecture Diagram
+# Financial MCP Server - Architecture Documentation
 
 ## System Architecture Overview
 
 This document provides a comprehensive view of the Financial MCP Server architecture, showing components, data flow, and interactions.
 
-## Architecture Diagram
+---
 
-```mermaid
-graph TB
-    subgraph "Client Layer"
-        CD[Claude Desktop<br/>MCP Protocol]
-        API[API Clients<br/>HTTP/REST]
-        WEB[Web Dashboard<br/>SSE Streaming]
-    end
+## Detailed Component Architecture
 
-    subgraph "API Gateway Layer"
-        FASTAPI[FastAPI Application<br/>CORS, Middleware]
-        
-        subgraph "API Routes"
-            REASONING[/api/v1/reasoning<br/>SSE Streaming]
-            MCP[/api/v1/mcp<br/>JSON-RPC 2.0]
-            METRICS[/api/v1/metrics<br/>Prometheus]
-            HEALTH[/health<br/>Health Check]
-        end
-    end
+### API Endpoints (FastAPI)
 
-    subgraph "Authentication & Authorization"
-        JWT[JWT Auth<br/>Token Validation]
-        RBAC[RBAC Engine<br/>Role/Permission Checks]
-        PERMS[Permissions<br/>Admin, Analyst, Viewer]
-    end
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/health` | GET | Health check |
+| `/api/v1/reasoning` | POST | SSE streaming reasoning |
+| `/api/v1/mcp` | POST | MCP protocol (JSON-RPC 2.0) |
+| `/api/v1/metrics` | GET | Prometheus metrics |
 
-    subgraph "Service Layer"
-        ORCH[ReasoningOrchestrator<br/>Claude API Integration]
-        MOCK[MockReasoningOrchestrator<br/>Query Parsing]
-        STREAM[Streaming Service<br/>SSE Formatting]
-        RISK[Risk Analyzer<br/>Portfolio Metrics]
-    end
+---
 
-    subgraph "MCP Tools Layer"
-        TOOLS[MCP Tools Dispatcher]
-        QT[query_transactions<br/>Transaction Queries]
-        ARM[analyze_risk_metrics<br/>Risk Analysis]
-        GMS[get_market_summary<br/>Market Data]
-    end
+### Authentication & Authorization
 
-    subgraph "Data Layer"
-        DB[(PostgreSQL Database)]
-        QUERIES[Query Functions<br/>SQLAlchemy ORM]
-        MODELS[Data Models<br/>Transaction, Portfolio, MarketData]
-    end
-
-    subgraph "Observability Layer"
-        LOG[Structured Logging<br/>JSON Format]
-        MET[Metrics Collector<br/>Prometheus]
-        TRACE[Request Tracing<br/>Request IDs]
-    end
-
-    subgraph "External Services"
-        CLAUDE[Claude API<br/>Anthropic]
-    end
-
-    %% Client to API connections
-    CD -->|MCP Protocol| MCP
-    API -->|HTTP/REST| REASONING
-    API -->|HTTP/REST| MCP
-    WEB -->|SSE Stream| REASONING
-
-    %% API routing
-    FASTAPI --> REASONING
-    FASTAPI --> MCP
-    FASTAPI --> METRICS
-    FASTAPI --> HEALTH
-
-    %% Authentication flow
-    REASONING --> JWT
-    MCP --> JWT
-    JWT --> RBAC
-    RBAC --> PERMS
-
-    %% Service layer connections
-    REASONING --> ORCH
-    REASONING --> MOCK
-    REASONING --> STREAM
-    ORCH --> CLAUDE
-    MOCK --> TOOLS
-    ORCH --> TOOLS
-
-    %% MCP Tools to Data
-    TOOLS --> QT
-    TOOLS --> ARM
-    TOOLS --> GMS
-    QT --> RBAC
-    ARM --> RBAC
-    GMS --> RBAC
-    QT --> QUERIES
-    ARM --> QUERIES
-    ARM --> RISK
-    GMS --> QUERIES
-
-    %% Data layer
-    QUERIES --> MODELS
-    MODELS --> DB
-
-    %% Observability connections
-    REASONING --> LOG
-    REASONING --> MET
-    REASONING --> TRACE
-    MCP --> LOG
-    MCP --> MET
-    TOOLS --> MET
-    ORCH --> MET
-    ORCH --> TRACE
-
-    %% Styling
-    classDef clientLayer fill:#e1f5ff,stroke:#01579b,stroke-width:2px
-    classDef apiLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef authLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    classDef serviceLayer fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    classDef toolLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    classDef dataLayer fill:#e0f2f1,stroke:#004d40,stroke-width:2px
-    classDef obsLayer fill:#fff9c4,stroke:#f57f17,stroke-width:2px
-    classDef extLayer fill:#fafafa,stroke:#424242,stroke-width:2px
-
-    class CD,API,WEB clientLayer
-    class FASTAPI,REASONING,MCP,METRICS,HEALTH apiLayer
-    class JWT,RBAC,PERMS authLayer
-    class ORCH,MOCK,STREAM,RISK serviceLayer
-    class TOOLS,QT,ARM,GMS toolLayer
-    class DB,QUERIES,MODELS dataLayer
-    class LOG,MET,TRACE obsLayer
-    class CLAUDE extLayer
+**Flow:**
+```
+Request → Extract JWT Token → Validate Token → Extract User → RBAC Check → Allow/Deny
 ```
 
-## Component Details
+**Roles:**
+- **Admin**: Full access to all resources
+- **Analyst**: Access to assigned users only
+- **Viewer**: Read-only public data
 
-### 1. Client Layer
-- **Claude Desktop**: Connects via MCP protocol (stdio/HTTP)
-- **API Clients**: REST API consumers
-- **Web Dashboard**: Real-time SSE streaming interface
+**Permissions:**
+- `READ_TRANSACTIONS` - Query transaction data
+- `READ_RISK_METRICS` - Analyze portfolio risk
+- `READ_MARKET_DATA` - Access market data (public)
 
-### 2. API Gateway Layer (FastAPI)
-- **FastAPI Application**: Main application with CORS and middleware
-- **Routes**:
-  - `/api/v1/reasoning`: SSE streaming endpoint for natural language queries
-  - `/api/v1/mcp`: MCP protocol over HTTP (JSON-RPC 2.0)
-  - `/api/v1/metrics`: Prometheus metrics endpoint
-  - `/health`: Health check endpoint
+---
 
-### 3. Authentication & Authorization
-- **JWT Auth**: Token creation, validation, and user extraction
-- **RBAC Engine**: Role-based access control with decorators
-- **Permissions**: Three roles (Admin, Analyst, Viewer) with granular permissions
+### Service Layer
 
-### 4. Service Layer
-- **ReasoningOrchestrator**: Uses Claude API for intelligent tool selection
-- **MockReasoningOrchestrator**: Query parsing-based tool selection (fallback)
-- **Streaming Service**: Formats events as Server-Sent Events (SSE)
-- **Risk Analyzer**: Calculates portfolio risk metrics (volatility, Sharpe ratio, VaR)
+**Components:**
 
-### 5. MCP Tools Layer
-- **MCP Tools Dispatcher**: Routes tool calls to appropriate handlers
-- **query_transactions**: Query transaction data with filters
-- **analyze_risk_metrics**: Analyze portfolio risk metrics
-- **get_market_summary**: Get aggregated market data
+1. **ReasoningOrchestrator**
+   - Uses Claude API for intelligent reasoning
+   - Multi-turn tool calling
+   - Streaming SSE events
+   - Optional (requires API key)
 
-### 6. Data Layer
-- **PostgreSQL Database**: Primary data store
-- **Query Functions**: SQLAlchemy ORM-based query functions
-- **Data Models**: Transaction, Portfolio, MarketData models
+2. **MockReasoningOrchestrator**
+   - Query parsing-based tool selection
+   - No API costs
+   - Good for development/testing
+   - Regex pattern matching
 
-### 7. Observability Layer
-- **Structured Logging**: JSON-formatted logs with request IDs
-- **Metrics Collector**: Prometheus-compatible metrics
-- **Request Tracing**: Request ID propagation and tool call tracking
+3. **Streaming Service**
+   - Formats events as SSE
+   - Progressive updates
+   - Real-time user feedback
 
-### 8. External Services
-- **Claude API**: Anthropic's Claude API for reasoning (optional)
+4. **Risk Analyzer**
+   - Calculates volatility
+   - Sharpe ratio
+   - Value at Risk (VaR)
+   - Portfolio metrics
 
-## Data Flow
+---
 
-### Reasoning Flow (SSE Streaming)
-```
-Client → /api/v1/reasoning → JWT Auth → RBAC Check → 
-Orchestrator → Tool Selection → MCP Tools → Database Queries → 
-Results → Streaming Service → SSE Events → Client
-```
+### MCP Tools
 
-### MCP Protocol Flow
-```
-Claude Desktop → /api/v1/mcp → JWT Auth → RBAC Check → 
-MCP Tools → Database Queries → Results → JSON-RPC Response → Claude Desktop
-```
+**Tool 1: query_transactions**
 
-### Authentication Flow
-```
-Request → Extract Token → JWT Validation → Extract User → 
-RBAC Check → Permission Validation → Allow/Deny
-```
+**Purpose:** Fetch transaction data with filters
 
-## Key Features
+**Parameters:**
+- `user_id` (integer)
+- `category` (string)
+- `start_date` (ISO date)
+- `end_date` (ISO date)
+- `min_amount` (number)
+- `max_amount` (number)
+- `min_risk_score` (0.0-1.0)
+- `max_risk_score` (0.0-1.0)
+- `limit` (integer, default: 100)
 
-1. **Dual Orchestration**: Supports both Claude API and mock query parsing
-2. **Streaming**: Real-time SSE streaming for reasoning steps
-3. **RBAC**: Fine-grained role-based access control
-4. **Observability**: Comprehensive logging, metrics, and tracing
-5. **MCP Protocol**: Full MCP protocol support for Claude Desktop
-6. **Database Abstraction**: SQLAlchemy ORM with connection pooling
+**RBAC:** Requires `READ_TRANSACTIONS` permission
+
+---
+
+**Tool 2: analyze_risk_metrics**
+
+**Purpose:** Calculate portfolio risk indicators
+
+**Parameters:**
+- `portfolio_id` (integer)
+- `user_id` (integer)
+- `period_days` (integer, default: 30)
+
+**Returns:**
+- Volatility
+- Sharpe Ratio
+- Value at Risk
+- Average Return
+- Risk Level (LOW/MODERATE/HIGH)
+
+**RBAC:** Requires `READ_RISK_METRICS` permission
+
+---
+
+**Tool 3: get_market_summary**
+
+**Purpose:** Get aggregated market data
+
+**Parameters:**
+- `symbols` (array of strings)
+- `period` ("hour", "day", "week", "month")
+
+**Returns:**
+- Current prices
+- Price ranges
+- Volume statistics
+- Price changes
+
+**RBAC:** Requires `READ_MARKET_DATA` permission (available to all roles)
+
+---
+
+### Data Layer
+
+**Database:** PostgreSQL 14+
+
+**Tables:**
+
+1. **transactions**
+   - id (primary key)
+   - user_id
+   - amount
+   - currency
+   - timestamp
+   - category
+   - risk_score
+
+2. **portfolios**
+   - id (primary key)
+   - user_id
+   - assets (JSON)
+   - total_value
+   - last_updated
+
+3. **market_data**
+   - id (primary key)
+   - symbol
+   - price
+   - volume
+   - timestamp
+
+**ORM:** SQLAlchemy with async support
+
+**Features:**
+- Connection pooling (pool_size=10)
+- Automatic reconnection
+- Query optimization
+- Migration support (Alembic)
+
+---
+
+### Observability
+
+**Logging:**
+- Structured JSON format
+- Request ID propagation
+- Log levels: DEBUG, INFO, WARNING, ERROR
+- File output: `./logs/app.log`
+
+**Metrics:**
+- Request count
+- Request latency
+- Error rate
+- Tool usage statistics
+- Database query performance
+
+**Tracing:**
+- Request ID tracking
+- Tool call duration
+- Database query timing
+
+**Stack:**
+- Promtail → Loki (log aggregation)
+- Prometheus (metrics storage)
+- Grafana (visualization)
+
+---
 
 ## Technology Stack
 
-- **Framework**: FastAPI
-- **Database**: PostgreSQL with SQLAlchemy ORM
-- **Authentication**: JWT (python-jose)
-- **Streaming**: Server-Sent Events (SSE)
-- **Protocol**: MCP (Model Context Protocol)
-- **Observability**: Prometheus metrics, structured JSON logging
-- **External API**: Claude API (Anthropic)
+| Component | Technology |
+|-----------|------------|
+| Web Framework | FastAPI |
+| Database | PostgreSQL |
+| ORM | SQLAlchemy |
+| Auth | JWT (python-jose) |
+| Validation | Pydantic |
+| Logging | Structured JSON logging |
+| Metrics | Prometheus |
+| Visualization | Grafana |
+| Containerization | Docker Compose |
+
+---
 
 ## Security
 
 - JWT token-based authentication
 - Role-based access control (RBAC)
 - Permission-based tool access
-- User-specific data access rules
-- CORS middleware for API protection
+- Request validation (Pydantic)
+- SQL injection protection (ORM)
 
-## Scalability
+---
 
-- Database connection pooling
-- Async/await for concurrent requests
-- Streaming responses for large data
-- Metrics collection for performance monitoring
-- Request tracing for debugging
+## Configuration
 
+### Required Environment Variables
+
+```bash
+DATABASE_URL=postgresql://user:pass@localhost:5432/financial_mcp
+JWT_SECRET_KEY=your-secret-key-here
+```
+
+### Optional
+
+```bash
+CLAUDE_API_KEY=your-claude-api-key  # Optional, uses mock if not set
+LOG_FILE=logs/app.log
+DEBUG=True
+```
+
+---
+
+See [Setup Guide](setup_guide.md) for detailed setup instructions.

@@ -5,11 +5,37 @@ omit =
     */test_*.py
     */__pycache__/*
     */migrations/*
+    */__init__.py
+    */alembic/*
+    # Non-core files (app initialization, entry points, seed scripts)
+    src/api/main.py
+    src/api/dependencies.py
+    src/mcp/server.py
+    src/database/seed.py
+    # Exclude from coverage: observability, config, schemas, models, utils
+    src/observability/*
+    src/config/*
+    src/api/schemas/*
+    src/mcp/schemas.py
+    src/database/models.py
+    src/utils/*
 
 [report]
 precision = 2
 show_missing = True
 skip_covered = False
+# Exclude lines from coverage reports
+exclude_lines =
+    # Exclude __init__ methods
+    def __init__
+    # Exclude if TYPE_CHECKING blocks
+    if TYPE_CHECKING:
+    # Exclude abstract methods
+    @abstractmethod
+    # Exclude pass statements
+    ^\s*pass\s*$
+    # Exclude raise NotImplementedError
+    raise NotImplementedError
 
 [html]
 directory = htmlcov

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     CLAUDE_API_KEY: Optional[str] = None
     
     # JWT Settings
-    JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
+    JWT_SECRET_KEY: str = "dev-secret-key-for-local-development-only"
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     

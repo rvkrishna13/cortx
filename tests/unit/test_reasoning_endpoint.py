@@ -347,6 +347,157 @@ class TestReasoningEndpointStreaming:
 class TestReasoningEndpointErrorHandling:
     """Tests for error handling in reasoning endpoint"""
     
+    @patch('src.api.routes.reasoning.ReasoningOrchestrator')
+    @patch('src.api.routes.reasoning.MockReasoningOrchestrator')
+    def test_orchestrator_creation_fallback_on_validation_error(self, mock_mock_orch, mock_real_orch):
+        """Test that ValidationError during orchestrator creation falls back to mock"""
+        from src.utils.exceptions import ValidationError
+        
+        mock_real_orch.side_effect = ValidationError("API key required", "api_key")
+        mock_mock_instance = AsyncMock()
+        mock_mock_orch.return_value = mock_mock_instance
+        
+        async def mock_reason(*args, **kwargs):
+            yield {"type": "done", "final_answer": "test", "step_number": 1}
+        
+        mock_mock_instance.reason = mock_reason
+        
+        client = TestClient(app)
+        token = create_admin_token()
+        response = client.post(
+            "/api/v1/reasoning",
+            json={"query": "test"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        
+        # Should use mock orchestrator
+        assert mock_mock_orch.called
+    
+    def test_final_answer_string_parsing(self):
+        """Test that string final_answer is parsed correctly"""
+        client = TestClient(app)
+        token = create_admin_token()
+        
+        # This will test the JSON parsing logic
+        with patch('src.api.routes.reasoning.ReasoningOrchestrator') as mock_orch:
+            mock_instance = AsyncMock()
+            mock_orch.return_value = mock_instance
+            
+            async def mock_reason(*args, **kwargs):
+                yield {"type": "done", "final_answer": '{"text":"answer"}', "step_number": 1}
+            
+            mock_instance.reason = mock_reason
+            
+            response = client.post(
+                "/api/v1/reasoning",
+                json={"query": "test"},
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            
+            assert response.status_code == 200
+    
+    def test_final_answer_invalid_json_fallback(self):
+        """Test that invalid JSON final_answer falls back to simple structure"""
+        client = TestClient(app)
+        token = create_admin_token()
+        
+        with patch('src.api.routes.reasoning.ReasoningOrchestrator') as mock_orch:
+            mock_instance = AsyncMock()
+            mock_orch.return_value = mock_instance
+            
+            async def mock_reason(*args, **kwargs):
+                # Return invalid JSON string
+                yield {"type": "done", "final_answer": "not valid json{", "step_number": 1}
+            
+            mock_instance.reason = mock_reason
+            
+            response = client.post(
+                "/api/v1/reasoning",
+                json={"query": "test"},
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            
+            assert response.status_code == 200
+    
+    def test_validation_error_auth_error_returns_401(self):
+        """Test that ValidationError with auth field returns 401"""
+        from src.utils.exceptions import ValidationError
+        
+        with patch('src.api.routes.reasoning.get_user_from_context') as mock_get:
+            mock_get.side_effect = ValidationError("Invalid token", field="token")
+            
+            client = TestClient(app)
+            response = client.post(
+                "/api/v1/reasoning",
+                json={"query": "test"},
+                headers={"Authorization": "Bearer invalid"}
+            )
+            
+            assert response.status_code == 401
+            assert "Unauthorized" in response.json()["detail"]
+    
+    @patch('src.api.routes.reasoning.settings')
+    def test_orchestrator_validation_error_fallback(self, mock_settings):
+        """Test that ValidationError during orchestrator creation falls back to mock"""
+        from src.utils.exceptions import ValidationError
+        mock_settings.CLAUDE_API_KEY = None  # This will cause ValidationError
+        
+        with patch('src.api.routes.reasoning.ReasoningOrchestrator') as mock_real_orch:
+            mock_real_orch.side_effect = ValidationError("API key required", "api_key")
+            
+            with patch('src.api.routes.reasoning.MockReasoningOrchestrator') as mock_mock_orch:
+                mock_instance = AsyncMock()
+                mock_mock_orch.return_value = mock_instance
+                
+                async def mock_reason(*args, **kwargs):
+                    yield {"type": "done", "final_answer": "test", "step_number": 1}
+                
+                mock_instance.reason = mock_reason
+                
+                client = TestClient(app)
+                token = create_admin_token()
+                response = client.post(
+                    "/api/v1/reasoning",
+                    json={"query": "test"},
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                
+                # Should use mock orchestrator
+                assert mock_mock_orch.called
+                assert response.status_code == 200
+    
+    @patch('src.api.routes.reasoning.settings')
+    @patch('src.api.routes.reasoning.ReasoningOrchestrator')
+    @patch('src.api.routes.reasoning.MockReasoningOrchestrator')
+    def test_orchestrator_validation_error_fallback_path(self, mock_mock_orch, mock_real_orch, mock_settings):
+        """Test the exact ValidationError fallback path"""
+        from src.utils.exceptions import ValidationError
+        mock_settings.CLAUDE_API_KEY = "test_key"
+        mock_settings.USE_MOCK_ORCHESTRATOR = False
+        
+        # Make ReasoningOrchestrator raise ValidationError
+        mock_real_orch.side_effect = ValidationError("API key validation failed", "api_key")
+        
+        mock_mock_instance = AsyncMock()
+        mock_mock_orch.return_value = mock_mock_instance
+        
+        async def mock_reason(*args, **kwargs):
+            yield {"type": "done", "final_answer": "fallback answer", "step_number": 1}
+        
+        mock_mock_instance.reason = mock_reason
+        
+        client = TestClient(app)
+        token = create_admin_token()
+        response = client.post(
+            "/api/v1/reasoning",
+            json={"query": "test query"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        
+        # Should fallback to mock orchestrator
+        assert mock_mock_orch.called
+        assert response.status_code == 200
+    
     @patch('src.api.routes.reasoning.get_user_from_context')
     @patch('src.api.routes.reasoning.MockReasoningOrchestrator')
     def test_handles_orchestrator_exception(self, mock_orch, mock_get_user):

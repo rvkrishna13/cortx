@@ -6,7 +6,7 @@ global:
 scrape_configs:
   - job_name: 'financial-mcp-server'
     static_configs:
-      - targets: ['localhost:8000']
+      - targets: ['app:8000']  # Use 'app' service name in Docker, 'localhost:8000' for local
     metrics_path: '/api/v1/metrics'
     scrape_interval: 10s
 

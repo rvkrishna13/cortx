@@ -68,13 +68,18 @@ class Database:
                 if not database_url:
                     raise ValueError("database_url cannot be empty")
                 
-                self._engine = create_engine(
-                    database_url,
-                    pool_pre_ping=True,  # Verify connections before using
-                    pool_size=pool_size,
-                    max_overflow=max_overflow,
-                    echo=echo
-                )
+                # SQLite doesn't support pool_size and max_overflow
+                engine_kwargs = {
+                    "pool_pre_ping": True,  # Verify connections before using
+                    "echo": echo
+                }
+                
+                # Only add pool parameters for non-SQLite databases
+                if not database_url.startswith("sqlite"):
+                    engine_kwargs["pool_size"] = pool_size
+                    engine_kwargs["max_overflow"] = max_overflow
+                
+                self._engine = create_engine(database_url, **engine_kwargs)
                 
                 # Test the connection
                 with self._engine.connect() as conn:

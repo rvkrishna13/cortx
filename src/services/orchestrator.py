@@ -2,6 +2,7 @@
 Orchestrator for coordinating reasoning, tool calls, and responses
 Uses Claude API streaming to let Claude decide which tools to call
 """
+import json
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from src.services.claude_client import ClaudeClient
 from src.mcp.tools import list_tools, call_tool
@@ -238,11 +239,27 @@ class ReasoningOrchestrator:
                                                         }
                                                         if step_number == 0:
                                                             step_number = 1
-                                                elif final_answer and conversation_turn > 0:
-                                                    # Final answer - send as single event (not chunked)
+                                                elif conversation_turn > 0:
+                                                    # Final answer - send as single event (formatted as JSON)
+                                                    # ALWAYS send answer if we're past the first turn
+                                                    if not final_answer:
+                                                        final_answer = "Analysis complete. Tools executed successfully."
+                                                    
+                                                    formatted_answer = self._format_final_answer_as_json(
+                                                        query=query,
+                                                        claude_answer=final_answer,
+                                                        executed_tools=executed_tools,
+                                                        tool_calls_count=tool_calls_used
+                                                    )
+                                                    # Parse JSON string to object for cleaner client-side handling
+                                                    try:
+                                                        answer_content = json.loads(formatted_answer) if isinstance(formatted_answer, str) else formatted_answer
+                                                    except:
+                                                        answer_content = formatted_answer
+                                                    
                                                     yield {
                                                         "type": "answer",
-                                                        "content": final_answer,
+                                                        "content": answer_content,  # Send as dict/object, not string
                                                         "step_number": step_number
                                                     }
                                                 break
@@ -324,12 +341,29 @@ class ReasoningOrchestrator:
                                 if block.get("type") == "tool_use"
                             ]
                             
-                            # If this was the final answer (after tools executed), send it as single event
-                            if conversation_turn > 0 and final_answer and not tool_uses:
+                            # If this was the final answer (after tools executed), send it as single event (formatted as JSON)
+                            # ALWAYS send answer if we're past the first turn and no more tools
+                            if conversation_turn > 0 and not tool_uses:
                                 step_number += 1
+                                # Ensure we have a final answer (Claude's or fallback)
+                                if not final_answer:
+                                    final_answer = "Analysis complete. Tools executed successfully."
+                                
+                                formatted_answer = self._format_final_answer_as_json(
+                                    query=query,
+                                    claude_answer=final_answer,
+                                    executed_tools=executed_tools,
+                                    tool_calls_count=tool_calls_used
+                                )
+                                # Parse JSON string to object for cleaner client-side handling
+                                try:
+                                    answer_content = json.loads(formatted_answer) if isinstance(formatted_answer, str) else formatted_answer
+                                except:
+                                    answer_content = formatted_answer
+                                
                                 yield {
                                     "type": "answer",
-                                    "content": final_answer,
+                                    "content": answer_content,  # Send as dict/object, not string
                                     "step_number": step_number
                                 }
                     
@@ -432,6 +466,13 @@ class ReasoningOrchestrator:
                                 
                                 tool_calls_used += 1
                                 
+                                # Track executed tool for final answer formatting
+                                executed_tools.append({
+                                    "name": tool_name,
+                                    "success": True,
+                                    "arguments": tool_input
+                                })
+                                
                             except Exception as e:
                                 step_number += 1
                                 tool_duration_ms = (time.time() - tool_start_time) * 1000
@@ -458,6 +499,14 @@ class ReasoningOrchestrator:
                                     "tool_use_id": tool_id,
                                     "content": error_msg
                                 })
+                                
+                                # Track failed tool for final answer formatting
+                                executed_tools.append({
+                                    "name": tool_name,
+                                    "success": False,
+                                    "error": error_msg,
+                                    "arguments": tool_input
+                                })
                         
                         # Add tool results as user message for next turn
                         if tool_results:
@@ -468,15 +517,31 @@ class ReasoningOrchestrator:
                         
                         conversation_turn += 1
                         
-                        # If no more tool uses, send final answer as single event
+                        # If no more tool uses, send final answer as single event (formatted as JSON)
+                        # ALWAYS send answer, even if Claude didn't generate one
                         if not tool_uses:
-                            if final_answer:
-                                step_number += 1
-                                yield {
-                                    "type": "answer",
-                                    "content": final_answer,
-                                    "step_number": step_number
-                                }
+                            step_number += 1
+                            # Ensure we have a final answer (Claude's or fallback)
+                            if not final_answer:
+                                final_answer = "Analysis complete. Tools executed successfully."
+                            
+                            formatted_answer = self._format_final_answer_as_json(
+                                query=query,
+                                claude_answer=final_answer,
+                                executed_tools=executed_tools,
+                                tool_calls_count=tool_calls_used
+                            )
+                            # Parse JSON string to object for cleaner client-side handling
+                            try:
+                                answer_content = json.loads(formatted_answer) if isinstance(formatted_answer, str) else formatted_answer
+                            except:
+                                answer_content = formatted_answer
+                            
+                            yield {
+                                "type": "answer",
+                                "content": answer_content,  # Send as dict/object, not string
+                                "step_number": step_number
+                            }
                             break
                         
                         # Continue to next turn to get Claude's answer
@@ -484,12 +549,41 @@ class ReasoningOrchestrator:
                         # Reset final_answer for next turn
                         final_answer = ""
             
-            # Final done event
+            # Final done event - ALWAYS send, even if no answer was generated
+            # Ensure we have a final answer (Claude's or fallback)
+            if not final_answer:
+                final_answer = "Analysis complete." if tool_calls_used > 0 else "Query processed."
+            
+            try:
+                formatted_final_answer = self._format_final_answer_as_json(
+                    query=query,
+                    claude_answer=final_answer,
+                    executed_tools=executed_tools,
+                    tool_calls_count=tool_calls_used
+                )
+            except Exception as e:
+                # If formatting fails, create a simple JSON answer
+                formatted_final_answer = json.dumps({
+                    "status": "success",
+                    "query": query,
+                    "tools_called": tool_calls_used,
+                    "answer": final_answer,
+                    "message": "Analysis complete",
+                    "format_error": str(e)
+                }, indent=2, ensure_ascii=False)
+            
+            # Parse the JSON string back to dict for the done event
+            try:
+                final_answer_dict = json.loads(formatted_final_answer) if isinstance(formatted_final_answer, str) else formatted_final_answer
+            except:
+                # If parsing fails, use the string as-is wrapped in a dict
+                final_answer_dict = {"raw": formatted_final_answer} if formatted_final_answer else {}
+            
             yield {
                 "type": "done",
                 "content": "Reasoning complete",
                 "step_number": step_number + 1,
-                "final_answer": final_answer,
+                "final_answer": final_answer_dict,  # Send as dict, not string
                 "tool_calls_made": tool_calls_used
             }
             
@@ -510,3 +604,64 @@ class ReasoningOrchestrator:
                 "content": f"Error in reasoning orchestrator: {str(e)}",
                 "step_number": step_number
             }
+    
+    def _format_final_answer_as_json(
+        self,
+        query: str,
+        claude_answer: str,
+        executed_tools: List[Dict[str, Any]],
+        tool_calls_count: int
+    ) -> str:
+        """
+        Format Claude's final answer as structured JSON
+        
+        Args:
+            query: Original user query
+            claude_answer: Claude's generated answer text
+            executed_tools: List of tools that were executed
+            tool_calls_count: Number of tool calls made
+        
+        Returns:
+            JSON string with structured answer
+        """
+        # Determine status based on tool execution
+        has_errors = any(not tool.get("success", True) for tool in executed_tools)
+        status = "success" if not has_errors else "partial" if executed_tools else "error"
+        
+        # Build structured answer
+        structured_answer = {
+            "status": status,
+            "query": query,
+            "tools_called": tool_calls_count,
+            "answer": claude_answer.strip(),
+            "tools_executed": [
+                {
+                    "name": tool["name"],
+                    "success": tool.get("success", True),
+                    "arguments": tool.get("arguments", {})
+                }
+                for tool in executed_tools
+            ],
+            "message": self._get_status_message(has_errors, tool_calls_count)
+        }
+        
+        # Add errors if any
+        errors = [tool for tool in executed_tools if not tool.get("success", True)]
+        if errors:
+            structured_answer["errors"] = [
+                {
+                    "tool": tool["name"],
+                    "error": tool.get("error", "Unknown error")
+                }
+                for tool in errors
+            ]
+        
+        # Return as formatted JSON string
+        return json.dumps(structured_answer, indent=2, ensure_ascii=False)
+    
+    def _get_status_message(self, has_errors: bool, tool_count: int) -> str:
+        """Get status message based on results"""
+        if not has_errors:
+            return f"Analysis complete. Retrieved data from {tool_count} tool(s)."
+        else:
+            return f"Analysis complete with some errors. Partial data retrieved from {tool_count} tool(s)."

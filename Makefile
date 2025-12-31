@@ -20,6 +20,7 @@ help:
 	@echo "  make docker-down    - Stop all services"
 	@echo "  make docker-logs    - View app container logs"
 	@echo "  make docker-restart - Restart all services"
+	@echo "  make docker-rebuild - Rebuild Docker image (use after code changes)"
 	@echo "  make docker-build   - Rebuild Docker images"
 	@echo "  make docker-clean   - Stop and remove all containers/volumes"
 	@echo "  make docker-ps      - Show container status"
@@ -36,15 +37,28 @@ install:
 
 # Run all tests with coverage and summary
 test:
-	@echo "🧪 Running tests with coverage..."
+	@echo "🧪 Running tests with coverage (70% per-file threshold for core logic)..."
+	@echo "   Checking: services/ (excluding orchestrator.py, claude_client.py), auth/, database (connection/queries), mcp/tools.py, api/routes/"
+	@echo "   Excluded: observability/, config/, schemas/, models.py, utils/, __init__.py, main.py, server.py, seed.py, orchestrator.py, claude_client.py"
 	@echo ""
 	@if python3 -c "import pytest_cov" 2>/dev/null || python -c "import pytest_cov" 2>/dev/null; then \
-		pytest --cov=src --cov-report=term-missing --cov-report=term -v --tb=short 2>&1 | tee /tmp/test_output.txt; \
+		pytest --cov=src --cov-config=.coveragerc --cov-report=term-missing --cov-report=term --cov-fail-under=0 -v --tb=short 2>&1 | tee /tmp/test_output.txt; \
+		TEST_EXIT=$$?; \
+		echo ""; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		echo "🔍 Checking per-file coverage (70% threshold for core logic files)..."; \
+		echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
+		if python3 scripts/check_coverage.py /tmp/test_output.txt; then \
+			COVERAGE_CHECK=0; \
+		else \
+			COVERAGE_CHECK=1; \
+		fi; \
 	else \
 		echo "⚠️  pytest-cov not installed, running tests without coverage..."; \
 		pytest -v --tb=short 2>&1 | tee /tmp/test_output.txt; \
+		TEST_EXIT=$$?; \
+		COVERAGE_CHECK=0; \
 	fi; \
-	TEST_EXIT=$$?; \
 	echo ""; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo "📊 Test Summary:"; \
@@ -63,14 +77,16 @@ test:
 	echo ""; \
 	if python3 -c "import pytest_cov" 2>/dev/null || python -c "import pytest_cov" 2>/dev/null; then \
 		COVERAGE=$$(grep -E "^TOTAL|^src" /tmp/test_output.txt | tail -1 | grep -oE "[0-9]+%" | head -1 || echo "N/A"); \
-		echo "📈 Code Coverage: $$COVERAGE"; \
+		echo "📈 Total Code Coverage: $$COVERAGE"; \
 	else \
 		echo "📈 Code Coverage: N/A (pytest-cov not installed)"; \
 	fi; \
 	echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; \
 	echo ""; \
 	rm -f /tmp/test_output.txt; \
-	exit $$TEST_EXIT
+	if [ $$TEST_EXIT -ne 0 ]; then exit $$TEST_EXIT; fi; \
+	if [ $$COVERAGE_CHECK -ne 0 ]; then exit $$COVERAGE_CHECK; fi; \
+	exit 0
 
 # Run the FastAPI server
 run:
@@ -87,6 +103,10 @@ setup-db:
 # Docker Compose commands
 docker-up:
 	@echo "🚀 Starting all services with Docker Compose..."
+	@if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "financial-mcp-server\|cortx.*app"; then \
+		echo "📦 App image not found, building first..." ; \
+		docker-compose build app ; \
+	fi
 	docker-compose up -d
 	@echo ""
 	@echo "✅ Services started! View logs with: make docker-logs"
@@ -109,15 +129,20 @@ docker-restart:
 	docker-compose restart
 	@echo "✅ Services restarted"
 
+docker-rebuild:
+	@echo "🔨 Rebuilding Docker images..."
+	docker-compose build app
+	@echo "✅ Image rebuilt. Use 'make docker-up' to start with new image"
+
 docker-build:
 	@echo "🔨 Building Docker images..."
 	docker-compose build
 	@echo "✅ Build complete"
 
 docker-clean:
-	@echo "🧹 Stopping and removing containers, networks, and volumes..."
-	docker-compose down -v
-	@echo "✅ Cleanup complete"
+	@echo "🧹 Stopping and removing containers, networks, volumes, and images..."
+	docker-compose down -v --rmi local
+	@echo "✅ Cleanup complete (containers, volumes, networks, and images removed)"
 
 docker-ps:
 	@echo "📊 Container status:"

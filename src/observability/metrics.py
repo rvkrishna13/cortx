@@ -166,23 +166,36 @@ class MetricsCollector:
         with self._lock:
             return dict(self._metrics)
     
+    def _sanitize_metric_name(self, name: str) -> str:
+        """Sanitize metric name for Prometheus (replace invalid characters)"""
+        # Prometheus metric names must match: [a-zA-Z_:][a-zA-Z0-9_:]*
+        # Replace / with _ and remove leading/trailing underscores from replacements
+        sanitized = name.replace("/", "_").replace("-", "_")
+        # Remove multiple consecutive underscores
+        while "__" in sanitized:
+            sanitized = sanitized.replace("__", "_")
+        return sanitized
+    
     def get_prometheus_format(self) -> str:
         """Get metrics in Prometheus format"""
         lines = []
         with self._lock:
             for metric_name, data in self._metrics.items():
+                # Sanitize metric name for Prometheus
+                sanitized_name = self._sanitize_metric_name(metric_name)
+                
                 # Count metric
-                lines.append(f"# TYPE {metric_name}_count counter")
-                lines.append(f"{metric_name}_count {data['count']}")
+                lines.append(f"# TYPE {sanitized_name}_count counter")
+                lines.append(f"{sanitized_name}_count {data['count']}")
                 
                 # Latency metric
                 avg_latency = data["total_latency_ms"] / data["count"] if data["count"] > 0 else 0
-                lines.append(f"# TYPE {metric_name}_latency_ms gauge")
-                lines.append(f"{metric_name}_latency_ms {avg_latency}")
+                lines.append(f"# TYPE {sanitized_name}_latency_ms gauge")
+                lines.append(f"{sanitized_name}_latency_ms {avg_latency}")
                 
                 # Error count
-                lines.append(f"# TYPE {metric_name}_errors counter")
-                lines.append(f"{metric_name}_errors {data['errors']}")
+                lines.append(f"# TYPE {sanitized_name}_errors counter")
+                lines.append(f"{sanitized_name}_errors {data['errors']}")
         
         return "\n".join(lines)
 

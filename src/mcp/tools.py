@@ -300,9 +300,20 @@ def _analyze_risk_metrics(db: Session, arguments: Dict[str, Any], context=None, 
         return {"content": [{"type": "text", "text": "Portfolio not found"}], "isError": True}
     
     # Get transactions
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=input_data.period_days or 30)
-    transactions = get_portfolio_transaction_history(db, input_data.portfolio_id, start_date, end_date)
+    # If period_days is not specified, get ALL transactions (no date filter)
+    if input_data.period_days:
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=input_data.period_days)
+        transactions = get_portfolio_transaction_history(db, input_data.portfolio_id, start_date, end_date)
+        time_period_days = input_data.period_days
+    else:
+        # No period specified - get all transactions for the portfolio
+        transactions = get_portfolio_transaction_history(db, input_data.portfolio_id, None, None)
+        # Calculate period from actual transaction dates
+        if transactions:
+            time_period_days = (datetime.utcnow() - min(t.timestamp for t in transactions)).days or 1
+        else:
+            time_period_days = 30  # Default if no transactions
     
     # Get current prices for portfolio holdings
     import json
@@ -316,17 +327,18 @@ def _analyze_risk_metrics(db: Session, arguments: Dict[str, Any], context=None, 
         portfolio=portfolio.__dict__,
         transactions=[t.__dict__ for t in transactions],
         current_prices=current_prices,
-        time_period_days=input_data.period_days or 30
+        time_period_days=time_period_days
     )
     
     if "error" in metrics:
         return {"content": [{"type": "text", "text": metrics["error"]}], "isError": True}
     
     # Format result
+    period_text = f"{time_period_days} days" if input_data.period_days else "all available transactions"
     result_text = f"""Portfolio {input_data.portfolio_id} Risk Analysis:
 
         Portfolio Value: ${metrics['portfolio_value']:,.2f}
-        Time Period: {input_data.period_days or 30} days
+        Time Period: {period_text}
 
         Risk Metrics:
         - Volatility: {metrics['volatility']:.2%} (annualized)

@@ -1,23 +1,39 @@
 #!/usr/bin/env python3
 """
-Generate a viewer JWT token for testing RBAC
-Run this with the server's Python environment
+Generate a JWT token with viewer role for testing RBAC
 """
 import sys
 import os
 
-# Add project root to path
-project_root = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, project_root)
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-try:
-    from src.auth.utils import create_viewer_token
+from src.auth.utils import create_viewer_token
+
+if __name__ == "__main__":
+    token = create_viewer_token()
     
-    # Create viewer token
-    token = create_viewer_token(user_id=5, username="test_viewer")
+    print("=" * 60)
+    print("🔑 VIEWER JWT TOKEN GENERATED")
+    print("=" * 60)
+    print()
+    print("Token:")
     print(token)
-except ImportError as e:
-    print(f"Error: {e}", file=sys.stderr)
-    print("Make sure to run this with the server's Python environment that has dependencies installed", file=sys.stderr)
-    sys.exit(1)
-
+    print()
+    print("=" * 60)
+    print("📋 Usage Examples:")
+    print("=" * 60)
+    print()
+    print("curl -X POST http://localhost:8000/api/v1/reasoning \\")
+    print("  -H 'Authorization: Bearer " + token + "' \\")
+    print("  -H 'Content-Type: application/json' \\")
+    print("  -d '{\"query\": \"Get market summary for AAPL\"}'")
+    print()
+    print("=" * 60)
+    print("⚠️  Viewer Role Permissions:")
+    print("=" * 60)
+    print("✅ Can access: Market data (public)")
+    print("❌ Cannot access: Transactions, Risk metrics, User data")
+    print()
+    print("💡 Save this token for your demo video!")
+    print("=" * 60)

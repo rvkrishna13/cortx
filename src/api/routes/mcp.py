@@ -11,6 +11,7 @@ from src.mcp.tools import list_tools, call_tool
 from src.observability.logging import generate_request_id, set_request_id, get_logger
 from src.observability.tracing import RequestContext
 from src.observability.metrics import get_metrics_collector
+from src.utils.exceptions import ValidationError
 
 router = APIRouter()
 logger = get_logger(__name__)
@@ -57,7 +58,6 @@ async def handle_mcp_request(request: Request, authorization: Optional[str] = No
         # Validate token early for non-initialize methods
         if method != "initialize":
             from src.auth.rbac import get_user_from_context
-            from src.utils.exceptions import ValidationError
             try:
                 user_info = get_user_from_context(auth_context)
             except ValidationError as e:
@@ -182,6 +182,43 @@ async def handle_mcp_request(request: Request, authorization: Optional[str] = No
                     }
                     return JSONResponse(content=response)
                 
+                except ValidationError as e:
+                    # Check if it's a permission error
+                    error_msg = str(e)
+                    if "permission" in error_msg.lower() or "access denied" in error_msg.lower():
+                        # Permission error - return 403
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "jsonrpc": "2.0",
+                                "id": message_id,
+                                "error": {
+                                    "code": -32001,
+                                    "message": "Forbidden: Insufficient permissions",
+                                    "data": error_msg
+                                }
+                            }
+                        )
+                    else:
+                        # Other validation error - return 400
+                        duration_ms = (time.time() - start_time) * 1000
+                        ctx.record_tool_call(
+                            tool_name=tool_name,
+                            duration_ms=duration_ms,
+                            success=False,
+                            error=error_msg
+                        )
+                        return JSONResponse(
+                            status_code=200,
+                            content={
+                                "jsonrpc": "2.0",
+                                "id": message_id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": f"Invalid params: {error_msg}"
+                                }
+                            }
+                        )
                 except Exception as e:
                     duration_ms = (time.time() - start_time) * 1000
                     ctx.record_tool_call(
@@ -215,7 +252,7 @@ async def handle_mcp_request(request: Request, authorization: Optional[str] = No
                             "jsonrpc": "2.0",
                             "id": message_id,
                             "error": {
-                                "code": -32603,
+                                "code": -32000,
                                 "message": f"Internal error: {str(e)}"
                             }
                         }
@@ -247,6 +284,22 @@ async def handle_mcp_request(request: Request, authorization: Optional[str] = No
     except HTTPException:
         # Re-raise HTTPException (auth errors, etc.) - don't catch these
         raise
+    except ValidationError as e:
+        # Check if it's a permission error
+        error_msg = str(e)
+        if "permission" in error_msg.lower() or "access denied" in error_msg.lower():
+            status_code = 403
+        else:
+            status_code = 400
+        request_duration_ms = (time.time() - request_start_time) * 1000
+        metrics_collector.record_endpoint_request(
+            endpoint="/api/v1/mcp",
+            method="POST",
+            duration_ms=request_duration_ms,
+            status_code=status_code,
+            request_id=request_id
+        )
+        raise HTTPException(status_code=status_code, detail=error_msg)
     except json.JSONDecodeError:
         request_duration_ms = (time.time() - request_start_time) * 1000
         metrics_collector.record_endpoint_request(

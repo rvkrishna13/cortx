@@ -1,5 +1,6 @@
 {
   "dashboard": {
+    "uid": "financial-mcp-dashboard",
     "title": "Financial MCP Server - Observability Dashboard",
     "tags": ["financial-mcp", "observability"],
     "timezone": "browser",
@@ -168,6 +169,111 @@
           }
         ],
         "gridPos": {"h": 4, "w": 6, "x": 18, "y": 32}
+      },
+      {
+        "id": 13,
+        "title": "Application Logs",
+        "type": "logs",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "targets": [
+          {
+            "expr": "{job=\"financial-mcp\"}",
+            "refId": "A",
+            "legendFormat": "{{level}}"
+          }
+        ],
+        "gridPos": {"h": 12, "w": 24, "x": 0, "y": 36},
+        "options": {
+          "dedupStrategy": "none",
+          "enableLogDetails": true,
+          "prettifyLogMessage": false,
+          "showCommonLabels": false,
+          "showLabels": false,
+          "showTime": true,
+          "sortOrder": "Descending",
+          "wrapLogMessage": false
+        }
+      },
+      {
+        "id": 14,
+        "title": "Error Logs",
+        "type": "logs",
+        "datasource": {
+          "type": "loki",
+          "uid": "Loki"
+        },
+        "targets": [
+          {
+            "expr": "{job=\"financial-mcp\", level=~\"ERROR|CRITICAL\"}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 48},
+        "options": {
+          "dedupStrategy": "none",
+          "enableLogDetails": true,
+          "prettifyLogMessage": false,
+          "showCommonLabels": false,
+          "showLabels": false,
+          "showTime": true,
+          "sortOrder": "Descending",
+          "wrapLogMessage": false
+        }
+      },
+      {
+        "id": 15,
+        "title": "Logs by Request ID",
+        "type": "logs",
+        "datasource": {
+          "type": "loki",
+          "uid": "Loki"
+        },
+        "targets": [
+          {
+            "expr": "{job=\"financial-mcp\"} |= \"request_id\"",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 48},
+        "options": {
+          "dedupStrategy": "none",
+          "enableLogDetails": true,
+          "prettifyLogMessage": false,
+          "showCommonLabels": false,
+          "showLabels": false,
+          "showTime": true,
+          "sortOrder": "Descending",
+          "wrapLogMessage": false
+        }
+      },
+      {
+        "id": 16,
+        "title": "Request Tool Counts",
+        "type": "logs",
+        "datasource": {
+          "type": "loki",
+          "uid": "Loki"
+        },
+        "targets": [
+          {
+            "expr": "{job=\"financial-mcp\"} |= \"Request completed\" | json",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 10, "w": 24, "x": 0, "y": 56},
+        "options": {
+          "dedupStrategy": "none",
+          "enableLogDetails": true,
+          "prettifyLogMessage": false,
+          "showCommonLabels": false,
+          "showLabels": false,
+          "showTime": true,
+          "sortOrder": "Descending",
+          "wrapLogMessage": false
+        }
       }
     ]
   }

@@ -79,7 +79,11 @@ async def reasoning_endpoint(
             )
         
         # Extract auth context from header and validate early
-        auth_context = {"token": authorization}
+        # Handle "Bearer " prefix if present
+        token = authorization
+        if token and token.startswith("Bearer "):
+            token = token[7:]
+        auth_context = {"token": token}
         # Validate token early to return proper HTTP status codes
         try:
             user_info = get_user_from_context(auth_context)
@@ -121,14 +125,6 @@ async def reasoning_endpoint(
                 # Fallback to mock if orchestrator creation fails (e.g., API key validation)
                 orchestrator = MockReasoningOrchestrator(request_context=ctx)
         
-        # Generate reasoning results
-        reasoning_results = orchestrator.reason(
-            query=request.query,
-            user_id=request.user_id,
-            auth_context=auth_context,
-            include_thinking=request.include_thinking
-        )
-        
         # Stream results as SSE - stream immediately as events arrive
         async def generate_stream() -> AsyncGenerator[str, None]:
             import asyncio
@@ -136,6 +132,14 @@ async def reasoning_endpoint(
             max_buffer = 100  # Max events in buffer before backpressure
             
             try:
+                # Generate reasoning results
+                reasoning_results = orchestrator.reason(
+                    query=request.query,
+                    user_id=request.user_id,
+                    auth_context=auth_context,
+                    include_thinking=request.include_thinking
+                )
+                
                 # Send initial start event with request ID
                 yield format_sse_event("start", {
                     "message": "Starting reasoning",
@@ -181,9 +185,19 @@ async def reasoning_endpoint(
                         buffer_size += 1
                     
                     elif event_type == "answer":
+                        # Ensure content is a dict/object, not a string
+                        answer_content = content
+                        if isinstance(content, str):
+                            try:
+                                import json
+                                answer_content = json.loads(content)
+                            except (json.JSONDecodeError, TypeError):
+                                # If parsing fails, wrap in a simple structure
+                                answer_content = {"text": content}
+                        
                         yield format_sse_event("answer", {
                             "step_number": step_number,
-                            "content": content
+                            "content": answer_content
                         })
                         buffer_size += 1
                     
@@ -195,14 +209,28 @@ async def reasoning_endpoint(
                         break
                     
                     elif event_type == "done":
+                        # Ensure final_answer is a dict/object, not a string
+                        final_answer = event.get("final_answer", {})
+                        if isinstance(final_answer, str):
+                            try:
+                                import json
+                                final_answer = json.loads(final_answer)
+                            except (json.JSONDecodeError, TypeError):
+                                # If parsing fails, wrap in a simple structure
+                                final_answer = {"text": final_answer} if final_answer else {}
+                        
                         yield format_sse_event("done", {
                             "step_number": step_number,
-                            "final_answer": event.get("final_answer", ""),
+                            "final_answer": final_answer,
                             "tool_calls_made": event.get("tool_calls_made", 0),
                             "message": "Reasoning complete"
                         })
                         break
                 
+            except ValidationError as e:
+                # Re-raise ValidationError so it can be caught by the top-level handler
+                # This allows the top-level exception handler to convert it to HTTPException
+                raise
             except Exception as e:
                 yield format_sse_event("error", {"message": str(e)})
             finally:

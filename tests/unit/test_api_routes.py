@@ -199,4 +199,106 @@ class TestMCPEndpoint:
     @patch('src.api.routes.mcp.call_tool')
     def test_mcp_endpoint_permission_denied(self, mock_call_tool, client, viewer_token):
         """Test MCP endpoint with permission denied"""
-        pass
+    
+    def test_mcp_endpoint_missing_tool_name(self, client, admin_token):
+        """Test MCP endpoint with missing tool name"""
+        response = client.post(
+            "/api/v1/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "arguments": {}
+                }
+            },
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        assert response.status_code == 200  # JSON-RPC uses 200 even for errors
+        assert "error" in response.json()
+        assert response.json()["error"]["code"] == -32602
+    
+    @patch('src.api.routes.mcp.call_tool')
+    def test_mcp_endpoint_tool_call_exception(self, mock_call_tool, client, admin_token):
+        """Test MCP endpoint with exception during tool call"""
+        mock_call_tool.side_effect = Exception("Tool execution failed")
+        
+        response = client.post(
+            "/api/v1/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "query_transactions",
+                    "arguments": {"user_id": 1}
+                }
+            },
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        assert response.status_code == 200
+        assert "error" in response.json()
+        assert response.json()["error"]["code"] == -32000
+    
+    @patch('src.api.routes.mcp.call_tool')
+    def test_mcp_endpoint_permission_error_returns_403(self, mock_call_tool, client, viewer_token):
+        """Test MCP endpoint with permission error returns 403"""
+        from src.utils.exceptions import ValidationError
+        mock_call_tool.side_effect = ValidationError("Access denied: missing required permissions", "permission")
+        
+        response = client.post(
+            "/api/v1/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "query_transactions",
+                    "arguments": {"user_id": 1}
+                }
+            },
+            headers={"Authorization": f"Bearer {viewer_token}"}
+        )
+        
+        assert response.status_code == 403
+        assert "error" in response.json()
+    
+    def test_mcp_endpoint_invalid_json(self, client, admin_token):
+        """Test MCP endpoint with invalid JSON"""
+        response = client.post(
+            "/api/v1/mcp",
+            content="invalid json{",
+            headers={
+                "Authorization": f"Bearer {admin_token}",
+                "Content-Type": "application/json"
+            }
+        )
+        
+        assert response.status_code == 400
+        assert "Invalid JSON" in response.json()["detail"] or "invalid" in response.json()["detail"].lower()
+    
+    @patch('src.api.routes.mcp.call_tool')
+    def test_mcp_endpoint_unexpected_exception(self, mock_call_tool, client, admin_token):
+        """Test MCP endpoint with unexpected exception"""
+        mock_call_tool.side_effect = RuntimeError("Unexpected error occurred")
+        
+        response = client.post(
+            "/api/v1/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "query_transactions",
+                    "arguments": {"user_id": 1}
+                }
+            },
+            headers={"Authorization": f"Bearer {admin_token}"}
+        )
+        
+        # JSON-RPC uses 200 even for errors
+        assert response.status_code == 200
+        assert "error" in response.json()
+        assert response.json()["error"]["code"] == -32000
