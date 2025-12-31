@@ -1,0 +1,175 @@
+{
+  "dashboard": {
+    "title": "Financial MCP Server - Observability Dashboard",
+    "tags": ["financial-mcp", "observability"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(endpoint_POST_/api/v1/reasoning_count[5m]))",
+            "legendFormat": "Requests/sec",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Tool Invocation Count",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum by (tool_name) (tool_{tool_name}_count)",
+            "legendFormat": "{{tool_name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Tool Success vs Failure Rate",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(tool_*_count) - sum(tool_*_errors)",
+            "legendFormat": "Succeeded",
+            "refId": "A"
+          },
+          {
+            "expr": "sum(tool_*_errors)",
+            "legendFormat": "Failed",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Tool Latency (Average)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum by (tool_name) (tool_{tool_name}_latency_ms)",
+            "legendFormat": "{{tool_name}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "LLM Token Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "llm_usage_tokens_input",
+            "legendFormat": "Input Tokens",
+            "refId": "A"
+          },
+          {
+            "expr": "llm_usage_tokens_output",
+            "legendFormat": "Output Tokens",
+            "refId": "B"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Error Rate by Type",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum by (error_type) (error_{error_type}_count)",
+            "legendFormat": "{{error_type}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Database Query Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum by (query_type) (db_query_{query_type}_latency_ms)",
+            "legendFormat": "{{query_type}}",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "Endpoint Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "endpoint_POST_/api/v1/reasoning_latency_ms",
+            "legendFormat": "Reasoning Endpoint",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 9,
+        "title": "Tool Calls per Request",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "avg(tool_*_count)",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 32}
+      },
+      {
+        "id": 10,
+        "title": "Total Errors",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(error_*_count)",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 32}
+      },
+      {
+        "id": 11,
+        "title": "Total LLM Calls",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "llm_usage_count",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 32}
+      },
+      {
+        "id": 12,
+        "title": "Success Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "(sum(tool_*_count) - sum(tool_*_errors)) / sum(tool_*_count) * 100",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 32}
+      }
+    ]
+  }
+}
+
